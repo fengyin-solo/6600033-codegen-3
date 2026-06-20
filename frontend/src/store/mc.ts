@@ -28,6 +28,15 @@ export interface HypTestResult {
   df?: number
 }
 
+export interface SavedExperiment {
+  id: string
+  name: string
+  savedAt: number
+  scenario: MCScenario
+  iterations: number
+  result: MCResult
+}
+
 function normalRandom(): number {
   let u = 0, v = 0
   while (u === 0) u = Math.random()
@@ -106,12 +115,32 @@ export const SCENARIOS: MCScenario[] = [
   { id: 'gambler', name: '赌徒破产', description: '不利赌局下资金耗尽概率估算', params: { p: 0.45, bankroll: 50, goal: 100 }, category: '概率' }
 ]
 
+const STORAGE_KEY = 'mc_saved_experiments'
+
+function loadFromStorage(): SavedExperiment[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function saveToStorage(list: SavedExperiment[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
+  } catch {
+  }
+}
+
 export const useMCStore = defineStore('mc', () => {
   const currentScenario = ref<MCScenario>(SCENARIOS[0])
   const iterations = ref(1000)
   const result = ref<MCResult | null>(null)
   const testResult = ref<HypTestResult | null>(null)
   const isRunning = ref(false)
+  const savedExperiments = ref<SavedExperiment[]>(loadFromStorage())
+  const compareIds = ref<Set<string>>(new Set())
 
   function runSimulation() {
     isRunning.value = true
@@ -133,9 +162,74 @@ export const useMCStore = defineStore('mc', () => {
 
   function setScenario(s: MCScenario) { currentScenario.value = s; result.value = null }
 
+  function saveExperiment(name?: string) {
+    if (!result.value) return
+    const exp: SavedExperiment = {
+      id: 'exp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+      name: name || `${currentScenario.value.name} - ${iterations.value}次 @ ${new Date().toLocaleTimeString()}`,
+      savedAt: Date.now(),
+      scenario: JSON.parse(JSON.stringify(currentScenario.value)),
+      iterations: iterations.value,
+      result: JSON.parse(JSON.stringify(result.value))
+    }
+    savedExperiments.value.unshift(exp)
+    saveToStorage(savedExperiments.value)
+    return exp
+  }
+
+  function deleteExperiment(id: string) {
+    savedExperiments.value = savedExperiments.value.filter(e => e.id !== id)
+    compareIds.value.delete(id)
+    saveToStorage(savedExperiments.value)
+  }
+
+  function loadExperiment(id: string) {
+    const exp = savedExperiments.value.find(e => e.id === id)
+    if (!exp) return
+    currentScenario.value = exp.scenario
+    iterations.value = exp.iterations
+    result.value = exp.result
+  }
+
+  function replayExperiment(id: string) {
+    const exp = savedExperiments.value.find(e => e.id === id)
+    if (!exp) return
+    currentScenario.value = exp.scenario
+    iterations.value = exp.iterations
+    runSimulation()
+  }
+
+  function toggleCompare(id: string) {
+    if (compareIds.value.has(id)) {
+      compareIds.value.delete(id)
+    } else {
+      compareIds.value.add(id)
+    }
+    compareIds.value = new Set(compareIds.value)
+  }
+
+  function clearCompare() {
+    compareIds.value.clear()
+    compareIds.value = new Set(compareIds.value)
+  }
+
   const convergenceData = computed(() => {
     if (!result.value) return [] as [number, number][]
     return result.value.convergence.slice(0, 200).map((v, i): [number, number] => [i, Math.round(v * 100000) / 100000])
+  })
+
+  const compareConvergenceList = computed(() => {
+    const colors = ['#f97316', '#10b981', '#f43f5e', '#8b5cf6', '#eab308', '#06b6d4']
+    return Array.from(compareIds.value).map((id, idx) => {
+      const exp = savedExperiments.value.find(e => e.id === id)
+      if (!exp) return null
+      return {
+        id,
+        name: exp.name,
+        color: colors[idx % colors.length],
+        data: exp.result.convergence.slice(0, 200).map((v, i): [number, number] => [i, Math.round(v * 100000) / 100000])
+      }
+    }).filter(Boolean) as { id: string; name: string; color: string; data: [number, number][] }[]
   })
 
   const histogramData = computed(() => {
@@ -148,5 +242,11 @@ export const useMCStore = defineStore('mc', () => {
     return { xAxis: Array.from({ length: bins }, (_, i) => Math.round((mn + i * bs) * 100) / 100), data: counts }
   })
 
-  return { currentScenario, iterations, result, testResult, isRunning, convergenceData, histogramData, runSimulation, runTest, setScenario }
+  return {
+    currentScenario, iterations, result, testResult, isRunning,
+    savedExperiments, compareIds,
+    convergenceData, compareConvergenceList, histogramData,
+    runSimulation, runTest, setScenario,
+    saveExperiment, deleteExperiment, loadExperiment, replayExperiment, toggleCompare, clearCompare
+  }
 })

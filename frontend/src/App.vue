@@ -2,7 +2,7 @@
   <div class="min-h-screen bg-slate-900 text-slate-200">
     <header class="border-b border-slate-700 px-6 py-4">
       <h1 class="text-2xl font-bold text-cyan-400">蒙特卡洛模拟与统计假设检验平台</h1>
-      <p class="text-sm text-slate-500 mt-1">随机采样模拟 · 6种MC场景 · 假设检验 · 置信区间可视化</p>
+      <p class="text-sm text-slate-500 mt-1">随机采样模拟 · 6种MC场景 · 假设检验 · 置信区间可视化 · 实验收藏与回放</p>
     </header>
     <div class="flex flex-col lg:flex-row gap-4 p-4">
       <div class="lg:w-1/4 space-y-4">
@@ -20,9 +20,14 @@
           <h3 class="text-sm font-bold text-slate-400 mb-3">参数控制</h3>
           <label class="text-xs text-slate-500">迭代次数: {{ store.iterations }}</label>
           <input type="range" min="100" max="5000" step="100" v-model.number="store.iterations" class="w-full mt-1 mb-3 accent-cyan-500" />
-          <button @click="store.runSimulation" :disabled="store.isRunning" class="w-full py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 rounded text-sm font-bold">
-            {{ store.isRunning ? '运行中...' : '▶ 开始模拟' }}
-          </button>
+          <div class="flex gap-2">
+            <button @click="store.runSimulation" :disabled="store.isRunning" class="flex-1 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 rounded text-sm font-bold">
+              {{ store.isRunning ? '运行中...' : '▶ 开始模拟' }}
+            </button>
+            <button @click="handleSave" :disabled="!store.result" class="py-2 px-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 rounded text-sm font-bold" title="收藏当前实验">
+              ★ 收藏
+            </button>
+          </div>
         </div>
         <div v-if="store.result" class="bg-slate-800 rounded-lg p-4 border border-slate-700 text-sm">
           <h3 class="text-sm font-bold text-slate-400 mb-3">模拟结果</h3>
@@ -33,10 +38,52 @@
             <div class="flex justify-between"><span class="text-slate-500">样本数</span><span class="text-slate-300">{{ store.result.iterations }}</span></div>
           </div>
         </div>
+        <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-slate-400">收藏的实验 ({{ store.savedExperiments.length }})</h3>
+            <button v-if="store.compareIds.size > 0" @click="store.clearCompare" class="text-xs text-slate-500 hover:text-red-400">清除对比</button>
+          </div>
+          <div v-if="store.savedExperiments.length === 0" class="text-xs text-slate-600 text-center py-4">
+            暂无收藏，运行模拟后点击 ★ 收藏按钮保存
+          </div>
+          <div v-else class="space-y-2 max-h-96 overflow-y-auto pr-1">
+            <div v-for="exp in store.savedExperiments" :key="exp.id"
+              :class="['p-2 rounded border text-xs transition-all', store.compareIds.has(exp.id) ? 'border-amber-500 bg-amber-900/20' : 'border-slate-700 bg-slate-900']">
+              <div class="flex items-start justify-between gap-1">
+                <div class="flex-1 min-w-0">
+                  <div class="font-bold text-slate-300 truncate">{{ exp.name }}</div>
+                  <div class="text-slate-500 mt-0.5">
+                    {{ new Date(exp.savedAt).toLocaleString() }}
+                  </div>
+                  <div class="text-cyan-400 font-mono mt-0.5">
+                    ≈ {{ exp.result.estimate.toFixed(4) }}
+                    <span v-if="exp.result.error !== undefined" class="text-orange-400 ml-1">(err {{ exp.result.error.toFixed(4) }})</span>
+                  </div>
+                </div>
+                <label class="flex items-center cursor-pointer shrink-0" :title="store.compareIds.has(exp.id) ? '取消对比' : '加入对比'">
+                  <input type="checkbox" :checked="store.compareIds.has(exp.id)" @change="store.toggleCompare(exp.id)" class="accent-amber-500" />
+                </label>
+              </div>
+              <div class="flex gap-1 mt-2">
+                <button @click="store.loadExperiment(exp.id)" class="flex-1 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs">加载</button>
+                <button @click="store.replayExperiment(exp.id)" class="flex-1 py-1 bg-cyan-700 hover:bg-cyan-600 rounded text-xs">回放</button>
+                <button @click="store.deleteExperiment(exp.id)" class="py-1 px-2 bg-red-700/70 hover:bg-red-600 rounded text-xs">×</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="lg:w-3/4 space-y-4">
         <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <h3 class="text-sm font-bold text-slate-400 mb-3">收敛过程</h3>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-slate-400">收敛过程</h3>
+            <div v-if="store.compareConvergenceList.length > 0" class="flex gap-2 text-xs flex-wrap">
+              <span class="text-cyan-400 flex items-center gap-1"><span class="w-3 h-0.5 bg-cyan-400 inline-block"></span>当前</span>
+              <span v-for="c in store.compareConvergenceList" :key="c.id" class="flex items-center gap-1" :style="{ color: c.color }">
+                <span class="w-3 h-0.5 inline-block" :style="{ backgroundColor: c.color }"></span>{{ c.name.slice(0, 12) }}
+              </span>
+            </div>
+          </div>
           <div ref="convergenceRef" class="w-full rounded" style="height:240px;background:#0f172a;"></div>
         </div>
         <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
@@ -87,13 +134,38 @@ function initCharts() {
 }
 
 function updateCharts() {
-  if (convChart && store.convergenceData.length > 0) {
+  if (convChart) {
+    const series: echarts.SeriesOption[] = []
+    if (store.convergenceData.length > 0) {
+      series.push({
+        type: 'line',
+        name: '当前',
+        data: store.convergenceData,
+        smooth: true,
+        lineStyle: { color: '#06b6d4', width: 2.5 },
+        areaStyle: { color: 'rgba(6,182,212,0.08)' },
+        symbol: 'none',
+        z: 10
+      })
+    }
+    store.compareConvergenceList.forEach(c => {
+      series.push({
+        type: 'line',
+        name: c.name,
+        data: c.data,
+        smooth: true,
+        lineStyle: { color: c.color, width: 1.5, type: 'dashed' },
+        symbol: 'none',
+        z: 5
+      })
+    })
     convChart.setOption({
       backgroundColor: '#0f172a',
       grid: { top: 20, bottom: 35, left: 65, right: 20 },
+      legend: { show: false },
       xAxis: { type: 'value', axisLabel: { color: '#94a3b8', fontSize: 10 } },
       yAxis: { type: 'value', axisLabel: { color: '#94a3b8', fontSize: 10 } },
-      series: [{ type: 'line', data: store.convergenceData, smooth: true, lineStyle: { color: '#06b6d4', width: 2 }, areaStyle: { color: 'rgba(6,182,212,0.1)' }, symbol: 'none' }],
+      series,
       tooltip: { trigger: 'axis', backgroundColor: '#1e293b', borderColor: '#475569' }
     })
   }
@@ -109,6 +181,11 @@ function updateCharts() {
   }
 }
 
+function handleSave() {
+  const name = window.prompt('为本次实验命名：', `${store.currentScenario.name} - ${store.iterations}次`)
+  if (name !== null) store.saveExperiment(name)
+}
+
 function runTest() {
   const g1 = group1Input.value.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n))
   const g2 = group2Input.value.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n))
@@ -116,5 +193,5 @@ function runTest() {
 }
 
 onMounted(() => { initCharts(); store.runSimulation() })
-watch(() => store.result, () => updateCharts(), { deep: true })
+watch(() => [store.result, store.compareConvergenceList], () => updateCharts(), { deep: true })
 </script>
