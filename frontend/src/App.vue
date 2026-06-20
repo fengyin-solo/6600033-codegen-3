@@ -30,7 +30,51 @@
           </div>
         </div>
         <div v-if="store.result" class="bg-slate-800 rounded-lg p-4 border border-slate-700 text-sm">
-          <h3 class="text-sm font-bold text-slate-400 mb-3">模拟结果</h3>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-slate-400">模拟结果</h3>
+            <button v-if="store.replaySourceId" @click="store.clearReplaySource" class="text-xs text-slate-500 hover:text-slate-300">退出对比</button>
+          </div>
+          <div v-if="store.replaySource && store.resultDiff" class="mb-3 p-2 rounded bg-slate-900/70 border border-slate-600">
+            <div class="text-xs text-amber-400 font-bold mb-2 flex items-center gap-1">
+              <span>⟲</span> 回放对比: {{ store.replaySource.name }}
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="flex justify-between">
+                <span class="text-slate-500">新估算</span>
+                <span class="text-cyan-400 font-mono font-bold">{{ store.result.estimate.toFixed(5) }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">旧估算</span>
+                <span class="text-slate-300 font-mono">{{ store.replaySource.result.estimate.toFixed(5) }}</span>
+              </div>
+              <div class="flex justify-between col-span-2">
+                <span class="text-slate-500">估算变化</span>
+                <span class="font-mono font-bold" :class="store.resultDiff.estimateDiff >= 0 ? 'text-green-400' : 'text-red-400'">
+                  {{ store.resultDiff.estimateDiff >= 0 ? '▲' : '▼' }} {{ store.resultDiff.estimateDiff.toFixed(6) }}
+                  <span class="text-slate-400">({{ store.resultDiff.estimateChangePct >= 0 ? '+' : '' }}{{ store.resultDiff.estimateChangePct.toFixed(2) }}%)</span>
+                </span>
+              </div>
+              <template v-if="store.result.error !== undefined && store.replaySource.result.error !== undefined">
+                <div class="flex justify-between">
+                  <span class="text-slate-500">新误差</span>
+                  <span class="text-orange-400 font-mono font-bold">{{ store.result.error.toFixed(5) }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-500">旧误差</span>
+                  <span class="text-slate-300 font-mono">{{ store.replaySource.result.error.toFixed(5) }}</span>
+                </div>
+                <div class="flex justify-between col-span-2">
+                  <span class="text-slate-500">误差变化</span>
+                  <span class="font-mono font-bold" :class="store.resultDiff.isImproved ? 'text-green-400' : 'text-red-400'">
+                    {{ store.resultDiff.isImproved ? '▼' : '▲' }} {{ store.resultDiff.errorDiff!.toFixed(6) }}
+                    <span class="text-slate-400">({{ store.resultDiff.errorChangePct! >= 0 ? '+' : '' }}{{ store.resultDiff.errorChangePct!.toFixed(2) }}%)</span>
+                    <span v-if="store.resultDiff.isImproved" class="text-green-400 ml-1">✓ 更优</span>
+                    <span v-else class="text-red-400 ml-1">✗ 更差</span>
+                  </span>
+                </div>
+              </template>
+            </div>
+          </div>
           <div class="space-y-2">
             <div class="flex justify-between"><span class="text-slate-500">估算值</span><span class="text-cyan-400 font-bold font-mono">{{ store.result.estimate.toFixed(6) }}</span></div>
             <div v-if="store.result.trueValue !== undefined" class="flex justify-between"><span class="text-slate-500">真实值</span><span class="text-green-400 font-mono">{{ store.result.trueValue.toFixed(6) }}</span></div>
@@ -48,10 +92,15 @@
           </div>
           <div v-else class="space-y-2 max-h-96 overflow-y-auto pr-1">
             <div v-for="exp in store.savedExperiments" :key="exp.id"
-              :class="['p-2 rounded border text-xs transition-all', store.compareIds.has(exp.id) ? 'border-amber-500 bg-amber-900/20' : 'border-slate-700 bg-slate-900']">
+              :class="['p-2 rounded border text-xs transition-all',
+                store.replaySourceId === exp.id ? 'border-cyan-400 bg-cyan-900/30 ring-1 ring-cyan-400' :
+                store.compareIds.has(exp.id) ? 'border-amber-500 bg-amber-900/20' : 'border-slate-700 bg-slate-900' ]">
               <div class="flex items-start justify-between gap-1">
                 <div class="flex-1 min-w-0">
-                  <div class="font-bold text-slate-300 truncate">{{ exp.name }}</div>
+                  <div class="flex items-center gap-1">
+                    <div class="font-bold text-slate-300 truncate">{{ exp.name }}</div>
+                    <span v-if="store.replaySourceId === exp.id" class="shrink-0 px-1 py-0.5 rounded text-[10px] bg-cyan-500 text-slate-900 font-bold">回放源</span>
+                  </div>
                   <div class="text-slate-500 mt-0.5">
                     {{ new Date(exp.savedAt).toLocaleString() }}
                   </div>

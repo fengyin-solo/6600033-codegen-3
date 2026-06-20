@@ -37,6 +37,14 @@ export interface SavedExperiment {
   result: MCResult
 }
 
+export interface ResultDiff {
+  estimateDiff: number
+  estimateChangePct: number
+  errorDiff?: number
+  errorChangePct?: number
+  isImproved: boolean
+}
+
 function normalRandom(): number {
   let u = 0, v = 0
   while (u === 0) u = Math.random()
@@ -141,6 +149,7 @@ export const useMCStore = defineStore('mc', () => {
   const isRunning = ref(false)
   const savedExperiments = ref<SavedExperiment[]>(loadFromStorage())
   const compareIds = ref<Set<string>>(new Set())
+  const replaySourceId = ref<string | null>(null)
 
   function runSimulation() {
     isRunning.value = true
@@ -160,7 +169,7 @@ export const useMCStore = defineStore('mc', () => {
     testResult.value = { testType: 'Welch T检验', statistic: Math.round(t * 1000) / 1000, pValue: Math.round(pValue * 10000) / 10000, significant: pValue < 0.05, alpha: 0.05, df }
   }
 
-  function setScenario(s: MCScenario) { currentScenario.value = s; result.value = null }
+  function setScenario(s: MCScenario) { currentScenario.value = s; result.value = null; replaySourceId.value = null }
 
   function saveExperiment(name?: string) {
     if (!result.value) return
@@ -194,6 +203,11 @@ export const useMCStore = defineStore('mc', () => {
   function replayExperiment(id: string) {
     const exp = savedExperiments.value.find(e => e.id === id)
     if (!exp) return
+    replaySourceId.value = id
+    if (!compareIds.value.has(id)) {
+      compareIds.value.add(id)
+      compareIds.value = new Set(compareIds.value)
+    }
     currentScenario.value = exp.scenario
     iterations.value = exp.iterations
     runSimulation()
@@ -211,6 +225,11 @@ export const useMCStore = defineStore('mc', () => {
   function clearCompare() {
     compareIds.value.clear()
     compareIds.value = new Set(compareIds.value)
+    replaySourceId.value = null
+  }
+
+  function clearReplaySource() {
+    replaySourceId.value = null
   }
 
   const convergenceData = computed(() => {
@@ -242,11 +261,33 @@ export const useMCStore = defineStore('mc', () => {
     return { xAxis: Array.from({ length: bins }, (_, i) => Math.round((mn + i * bs) * 100) / 100), data: counts }
   })
 
+  const replaySource = computed(() => {
+    if (!replaySourceId.value) return null
+    return savedExperiments.value.find(e => e.id === replaySourceId.value) || null
+  })
+
+  const resultDiff = computed((): ResultDiff | null => {
+    if (!result.value || !replaySource.value) return null
+    const oldR = replaySource.value.result
+    const newR = result.value
+    const estimateDiff = newR.estimate - oldR.estimate
+    const estimateChangePct = oldR.estimate !== 0 ? (estimateDiff / Math.abs(oldR.estimate)) * 100 : 0
+    let errorDiff: number | undefined
+    let errorChangePct: number | undefined
+    let isImproved = false
+    if (oldR.error !== undefined && newR.error !== undefined) {
+      errorDiff = newR.error - oldR.error
+      errorChangePct = oldR.error !== 0 ? (errorDiff / oldR.error) * 100 : 0
+      isImproved = newR.error < oldR.error
+    }
+    return { estimateDiff, estimateChangePct, errorDiff, errorChangePct, isImproved }
+  })
+
   return {
     currentScenario, iterations, result, testResult, isRunning,
-    savedExperiments, compareIds,
+    savedExperiments, compareIds, replaySourceId, replaySource, resultDiff,
     convergenceData, compareConvergenceList, histogramData,
     runSimulation, runTest, setScenario,
-    saveExperiment, deleteExperiment, loadExperiment, replayExperiment, toggleCompare, clearCompare
+    saveExperiment, deleteExperiment, loadExperiment, replayExperiment, toggleCompare, clearCompare, clearReplaySource
   }
 })
